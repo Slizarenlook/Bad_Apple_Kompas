@@ -1,0 +1,81 @@
+# -*- coding: utf-8 -*-
+#|test
+
+import pythoncom
+from win32com.client import Dispatch, gencache
+
+import LDefin2D
+import MiscellaneousHelpers as MH
+import numpy as np
+import os
+import cv2
+from PIL import Image
+from svg.path import parse_path
+from svg.path.path import Line
+from svg.path.path import CubicBezier
+from xml.dom import minidom
+import sys
+import time
+#  Подключим константы API Компас
+kompas6_constants = gencache.EnsureModule("{75C9F5D0-B5B8-4526-8681-9903C567D2ED}", 0, 1, 0).constants
+kompas6_constants_3d = gencache.EnsureModule("{2CAF168C-7961-4B90-9DA2-701419BEEFE3}", 0, 1, 0).constants
+
+#  Подключим описание интерфейсов API5
+kompas6_api5_module = gencache.EnsureModule("{0422828C-F174-495E-AC5D-D31014DBBE87}", 0, 1, 0)
+kompas_object = kompas6_api5_module.KompasObject(Dispatch("Kompas.Application.5")._oleobj_.QueryInterface(kompas6_api5_module.KompasObject.CLSID, pythoncom.IID_IDispatch))
+MH.iKompasObject  = kompas_object
+
+#  Подключим описание интерфейсов API7
+kompas_api7_module = gencache.EnsureModule("{69AC2981-37C0-4379-84FD-5DD2F3C0A520}", 0, 1, 0)
+application = kompas_api7_module.IApplication(Dispatch("Kompas.Application.7")._oleobj_.QueryInterface(kompas_api7_module.IApplication.CLSID, pythoncom.IID_IDispatch))
+MH.iApplication  = application
+
+
+Documents = application.Documents
+#  Получим активный документ
+kompas_document = application.ActiveDocument
+kompas_document_2d = kompas_api7_module.IKompasDocument2D(kompas_document)
+iDocument2D = kompas_object.ActiveDocument2D()
+lst = os.listdir('path_to_svg')
+files_len = len(lst)
+objects = []
+for i in range(0,files_len):
+	start_time = time.perf_counter()
+	doc = minidom.parse(f'{"path_to_svg"}{i}{".svg"}')
+	path_strings = [path.getAttribute('d') for path
+	                in doc.getElementsByTagName('path')]
+	doc.unlink()
+	if len(objects) != 0:
+		for obj in objects:
+			iDocument2D.ksDeleteObj(obj)
+		objects.clear()
+	for path_string in path_strings:
+		path = parse_path(path_string)
+		for e in path:
+			if isinstance(e, CubicBezier):
+				x0 = e.start.real
+				y0 = e.start.imag
+				z0 = e.control1.real
+				z1 = e.control1.imag
+				t0 = e.control2.real
+				t1 = e.control2.imag
+				x1 = e.end.real
+				y1 = e.end.imag
+	#print("(%.2f, %.2f) - (%.2f, %.2f) - (%.2f, %.2f)" % (x0, y0,z0,z1, x1, y1))
+				iDocument2D.ksBezier(0, 1)
+				iDocument2D.ksPoint(x0, y0, 0)
+				iDocument2D.ksPoint(z0, z1, 0)
+				iDocument2D.ksPoint(t0, t1, 0)
+				iDocument2D.ksPoint(x1, y1, 0)
+				obj = iDocument2D.ksEndObj()
+				objects.append(obj)
+			elif isinstance(e, Line):
+				x0 = e.start.real
+				y0 = e.start.imag
+				x1 = e.end.real
+				y1 = e.end.imag
+				obj = iDocument2D.ksLineSeg(x0, y0, x1,y1,1)
+				objects.append(obj)
+	print("frame: ",i," done"," %s seconds" % (time.perf_counter() - start_time))
+
+
